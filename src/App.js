@@ -1,0 +1,357 @@
+import React, { useState, useEffect, useRef } from 'react';
+// import Chart from 'chart.js/auto';
+import Chart from 'chart.js/auto';
+import './App.css';
+
+// Helper function to mimic numpy.linspace
+function linspace(start, stop, num) {
+  const arr = [];
+  const step = (stop - start) / (num - 1);
+  for (let i = 0; i < num; i++) {
+    arr.push(start + step * i);
+  }
+  return arr;
+}
+
+// Function that calculates liquidity parameters
+function calculateLiquidity(P_lower, P_upper, P_entry, current_price, initial_eth, P_withdraw) {
+  const P_values = linspace(P_lower, P_upper, 100);
+  if (Math.sqrt(P_upper) === Math.sqrt(P_entry)) {
+    return {
+      eth_at_current: 0,
+      usdc_at_current: 0,
+      P_values,
+      eth_holdings: Array(100).fill(0),
+      usdc_holdings: Array(100).fill(0),
+      v3_position_value: Array(100).fill(0),
+      value_of_assets_outside: Array(100).fill(0),
+      impermanent_loss: Array(100).fill(0),
+      v3_value_at_current: 0,
+      impermanent_loss_at_current: 0,
+      withdrawn_value: 0,
+      withdrawn_il: 0,
+      eth_at_withdraw: 0,
+      usdc_at_withdraw: 0
+    };
+  }
+  const L = initial_eth * Math.sqrt(P_entry) * Math.sqrt(P_upper) / (Math.sqrt(P_upper) - Math.sqrt(P_entry));
+  const eth_holdings = P_values.map(P => L * (Math.sqrt(P_upper) - Math.sqrt(P)) / (Math.sqrt(P) * Math.sqrt(P_upper)));
+  const usdc_holdings = P_values.map(P => L * (Math.sqrt(P) - Math.sqrt(P_lower)));
+  
+  // Calculate holdings and value at withdrawal price
+  const eth_at_withdraw = L * (Math.sqrt(P_upper) - Math.sqrt(P_withdraw)) / (Math.sqrt(P_withdraw) * Math.sqrt(P_upper));
+  const usdc_at_withdraw = L * (Math.sqrt(P_withdraw) - Math.sqrt(P_lower));
+  const withdrawn_value = eth_at_withdraw * P_withdraw + usdc_at_withdraw;
+  const withdrawn_il = Math.abs(withdrawn_value - (initial_eth * P_withdraw));
+
+  // Original calculations
+  const eth_at_current = L * (Math.sqrt(P_upper) - Math.sqrt(current_price)) / (Math.sqrt(current_price) * Math.sqrt(P_upper));
+  const usdc_at_current = L * (Math.sqrt(current_price) - Math.sqrt(P_lower));
+  const v3_position_value = P_values.map((P, i) => eth_holdings[i] * P + usdc_holdings[i]);
+  const value_of_assets_outside = P_values.map(P => initial_eth * P);
+  const impermanent_loss = v3_position_value.map((v3, i) => Math.abs(v3 - value_of_assets_outside[i]));
+  const v3_value_at_current = eth_at_current * current_price + usdc_at_current;
+  const impermanent_loss_at_current = Math.abs(v3_value_at_current - (initial_eth * current_price));
+
+  return {
+    eth_at_current,
+    usdc_at_current,
+    P_values,
+    eth_holdings,
+    usdc_holdings,
+    v3_position_value,
+    value_of_assets_outside,
+    impermanent_loss,
+    v3_value_at_current,
+    impermanent_loss_at_current,
+    withdrawn_value,
+    withdrawn_il,
+    eth_at_withdraw,
+    usdc_at_withdraw
+  };
+}
+
+function App() {
+  // Input state
+  const [P_lower, setPLower] = useState(1000);
+  const [P_upper, setPUpper] = useState(3000);
+  const [P_entry, setPEntry] = useState(1000);
+  const [currentPrice, setCurrentPrice] = useState(3000);
+  const [initialEth, setInitialEth] = useState(1);
+  const [P_withdraw, setPWithdraw] = useState(2000);
+
+  // Computed liquidity state
+  const [data, setData] = useState(null);
+
+  // Refs for canvas elements
+  const compositionChartRef = useRef(null);
+  const v3PositionChartRef = useRef(null);
+  const impermanentLossChartRef = useRef(null);
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    const result = calculateLiquidity(
+      Number(P_lower),
+      Number(P_upper),
+      Number(P_entry),
+      Number(currentPrice),
+      Number(initialEth),
+      Number(P_withdraw)
+    );
+    setData(result);
+  };
+
+  // Render charts when data is available
+  useEffect(() => {
+    let compChart, posChart, ilChart;
+    if (data && compositionChartRef.current) {
+      const ctx = compositionChartRef.current.getContext('2d');
+    
+      // Destroy existing chart instance if it exists
+      if (compChart) {
+        compChart.destroy();
+      }
+    
+      compChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'USDC Holdings',
+              data: data.P_values.map((p, i) => ({ x: p, y: data.usdc_holdings[i] })),
+              borderColor: 'blue',
+              fill: false,
+              tension: 0.4,
+              pointRadius: 0,
+              yAxisID: 'yLeft'
+            },
+            {
+              label: 'ETH Holdings',
+              data: data.P_values.map((p, i) => ({ x: p, y: data.eth_holdings[i] })),
+              borderColor: 'orange',
+              fill: false,
+              tension: 0.4,
+              pointRadius: 0,
+              yAxisID: 'yRight'
+            },
+            {
+              label: 'Current USDC Holdings',
+              data: [{ x: Number(currentPrice), y: data.usdc_at_current }],
+              backgroundColor: 'blue',
+              pointRadius: 6,
+              type: 'scatter',
+              yAxisID: 'yLeft'
+            },
+            {
+              label: 'Current ETH Holdings',
+              data: [{ x: Number(currentPrice), y: data.eth_at_current }],
+              backgroundColor: 'orange',
+              pointRadius: 6,
+              type: 'scatter',
+              yAxisID: 'yRight'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'ETH Price (USDC)' }
+            },
+            yLeft: {
+              type: 'linear',
+              position: 'left',
+              title: { display: true, text: 'USDC Holdings' },
+              ticks: { color: 'blue' }
+            },
+            yRight: {
+              type: 'linear',
+              position: 'right',
+              title: { display: true, text: 'ETH Holdings' },
+              ticks: { color: 'orange' },
+              grid: { drawOnChartArea: false } // Avoid overlapping grid lines
+            }
+          },
+          plugins: {
+            tooltip: { mode: 'index', intersect: false }
+          }
+        }
+      });
+    }    
+    if (data && v3PositionChartRef.current) {
+      const ctx2 = v3PositionChartRef.current.getContext('2d');
+      const hodlValue = Number(initialEth) * Number(currentPrice);
+      posChart = new Chart(ctx2, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'V3 Position Value',
+              data: data.P_values.map((p, i) => ({ x: p, y: data.v3_position_value[i] })),
+              borderColor: 'blue',
+              fill: false,
+              tension: 0.4,
+              pointRadius: 0
+            },
+            {
+              label: 'HODL Value',
+              data: data.P_values.map((p, i) => ({ x: p, y: data.value_of_assets_outside[i] })),
+              borderColor: 'green',
+              fill: false,
+              tension: 0.4,
+              pointRadius: 0
+            },
+            {
+              label: 'Current V3 Value',
+              data: [{ x: Number(currentPrice), y: data.v3_value_at_current }],
+              backgroundColor: 'blue',
+              pointRadius: 6,
+              type: 'scatter'
+            },
+            {
+              label: 'Current HODL Value',
+              data: [{ x: Number(currentPrice), y: hodlValue }],
+              backgroundColor: 'green',
+              pointRadius: 6,
+              type: 'scatter'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'ETH Price (USDC)' }
+            },
+            y: {
+              title: { display: true, text: 'Value (USDC)' }
+            }
+          },
+          plugins: {
+            tooltip: { mode: 'index', intersect: false }
+          }
+        }
+      });
+    }
+    if (data && impermanentLossChartRef.current) {
+      const ctx3 = impermanentLossChartRef.current.getContext('2d');
+      ilChart = new Chart(ctx3, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'Impermanent Loss',
+              data: data.P_values.map((p, i) => ({ x: p, y: data.impermanent_loss[i] })),
+              borderColor: 'red',
+              fill: false,
+              tension: 0.4,
+              pointRadius: 0
+            },
+            {
+              label: 'Current Impermanent Loss',
+              data: [{ x: Number(currentPrice), y: data.impermanent_loss_at_current }],
+              backgroundColor: 'red',
+              pointRadius: 6,
+              type: 'scatter'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'ETH Price (USDC)' }
+            },
+            y: {
+              title: { display: true, text: 'Impermanent Loss (USD)' }
+            }
+          },
+          plugins: {
+            tooltip: { mode: 'index', intersect: false }
+          }
+        }
+      });
+    }
+    return () => {
+      if (compChart) compChart.destroy();
+      if (posChart) posChart.destroy();
+      if (ilChart) ilChart.destroy();
+    };
+  }, [data, currentPrice, initialEth]);
+
+  // Compute slider percentages
+  const ethValueAtCurrent = data ? data.eth_at_current * currentPrice : 0;
+  const totalValue = ethValueAtCurrent + (data ? data.usdc_at_current : 0);
+  const ethPercentage = totalValue > 0 ? (ethValueAtCurrent / totalValue) * 100 : 50;
+  const usdcPercentage = totalValue > 0 ? ((data.usdc_at_current) / totalValue) * 100 : 50;
+
+  return (
+    <div className="container">
+      <h2>Uniswap V3 Liquidity Analysis</h2>
+      <form onSubmit={handleSubmit}>
+        <label>P_lower:</label>
+        <input type="number" value={P_lower} onChange={(e) => setPLower(e.target.value)} step="0.01" required />
+
+        <label>P_upper:</label>
+        <input type="number" value={P_upper} onChange={(e) => setPUpper(e.target.value)} step="0.01" required />
+
+        <label>P_entry:</label>
+        <input type="number" value={P_entry} onChange={(e) => setPEntry(e.target.value)} step="0.01" required />
+
+        <label>Current Price:</label>
+        <input type="number" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} step="0.01" required />
+
+        <label>Initial ETH:</label>
+        <input type="number" value={initialEth} onChange={(e) => setInitialEth(e.target.value)} step="0.01" required />
+
+        <label>Withdrawal Price:</label>
+        <input 
+          type="number" 
+          value={P_withdraw} 
+          onChange={(e) => setPWithdraw(e.target.value)} 
+          step="0.01" 
+          required 
+        />
+
+        <button type="submit">Calculate</button>
+      </form>
+
+      {data && (
+        <div>
+          <h3>Results</h3>
+          <p>ETH Holdings (at current price): {data.eth_at_current.toFixed(4)} ETH</p>
+          <p>USDC Holdings (at current price): {data.usdc_at_current.toFixed(2)} USDC</p>
+          <p>Portfolio Value (at current price): {data.v3_value_at_current.toFixed(2)} USDC</p>
+          <p>Impermanent Loss (at current price): {data.impermanent_loss_at_current.toFixed(2)} USDC</p>
+          <hr/>
+          <p>ETH at Withdrawal Price: {data.eth_at_withdraw?.toFixed(4)} ETH</p>
+          <p>USDC at Withdrawal Price: {data.usdc_at_withdraw?.toFixed(2)} USDC</p>
+          <p>Portfolio Value at Withdrawal: {data.withdrawn_value?.toFixed(2)} USDC</p>
+          <p>Impermanent Loss at Withdrawal: {data.withdrawn_il?.toFixed(2)} USDC</p>
+          
+          <div className="slider-container">
+            <label>ETH-USDC Composition:</label>
+            <input type="range" min="0" max="100" value={ethPercentage} disabled />
+            <span className="slider-percentage">
+              ETH: {ethPercentage.toFixed(2)}% | USDC: {usdcPercentage.toFixed(2)}%
+            </span>
+          </div>
+
+          <h3>Liquidity Composition</h3>
+          <canvas ref={compositionChartRef}></canvas>
+
+          <h3>Value of V3 Position vs HODL</h3>
+          <canvas ref={v3PositionChartRef}></canvas>
+
+          <h3>Impermanent Loss</h3>
+          <canvas ref={impermanentLossChartRef}></canvas>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default App;
