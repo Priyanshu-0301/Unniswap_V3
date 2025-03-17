@@ -292,46 +292,83 @@ function App() {
     <div className="container">
       <h2>Uniswap V3 Liquidity Analysis</h2>
       <form onSubmit={handleSubmit}>
-        <label>P_lower:</label>
-        <input type="number" value={P_lower} onChange={(e) => setPLower(e.target.value)} step="0.01" required />
+        <div className="input-group">
+          <label>Lower Price (USDC):</label>
+          <input type="number" value={P_lower} onChange={(e) => setPLower(e.target.value)} step="0.01" required />
+        </div>
 
-        <label>P_upper:</label>
-        <input type="number" value={P_upper} onChange={(e) => setPUpper(e.target.value)} step="0.01" required />
+        <div className="input-group">
+          <label>Upper Price (USDC):</label>
+          <input type="number" value={P_upper} onChange={(e) => setPUpper(e.target.value)} step="0.01" required />
+        </div>
 
-        <label>P_entry:</label>
-        <input type="number" value={P_entry} onChange={(e) => setPEntry(e.target.value)} step="0.01" required />
+        <div className="input-group">
+          <label>Entry Price (USDC):</label>
+          <input type="number" value={P_entry} onChange={(e) => setPEntry(e.target.value)} step="0.01" required />
+        </div>
 
-        <label>Current Price:</label>
-        <input type="number" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} step="0.01" required />
+        <div className="input-group">
+          <label>Current Price (USDC):</label>
+          <input type="number" value={currentPrice} onChange={(e) => setCurrentPrice(e.target.value)} step="0.01" required />
+        </div>
 
-        <label>Initial ETH:</label>
-        <input type="number" value={initialEth} onChange={(e) => setInitialEth(e.target.value)} step="0.01" required />
+        <div className="input-group">
+          <label>Initial ETH:</label>
+          <input type="number" value={initialEth} onChange={(e) => setInitialEth(e.target.value)} step="0.01" required />
+        </div>
 
-        <label>Withdrawal Price:</label>
-        <input 
-          type="number" 
-          value={P_withdraw} 
-          onChange={(e) => setPWithdraw(e.target.value)} 
-          step="0.01" 
-          required 
-        />
+        <div className="input-group">
+          <label>Withdrawal Price (USDC):</label>
+          <input type="number" value={P_withdraw} onChange={(e) => setPWithdraw(e.target.value)} step="0.01" required />
+        </div>
 
-        <button type="submit">Calculate</button>
+        <button type="submit">Calculate Position</button>
       </form>
 
       {data && (
-        <div>
-          <h3>Results</h3>
-          <p>ETH Holdings (at current price): {data.eth_at_current.toFixed(4)} ETH</p>
-          <p>USDC Holdings (at current price): {data.usdc_at_current.toFixed(2)} USDC</p>
-          <p>Portfolio Value (at current price): {data.v3_value_at_current.toFixed(2)} USDC</p>
-          <p>Impermanent Loss (at current price): {data.impermanent_loss_at_current.toFixed(2)} USDC</p>
-          <hr/>
-          <p>ETH at Withdrawal Price: {data.eth_at_withdraw?.toFixed(4)} ETH</p>
-          <p>USDC at Withdrawal Price: {data.usdc_at_withdraw?.toFixed(2)} USDC</p>
-          <p>Portfolio Value at Withdrawal: {data.withdrawn_value?.toFixed(2)} USDC</p>
-          <p>Impermanent Loss at Withdrawal: {data.withdrawn_il?.toFixed(2)} USDC</p>
-          
+        <div className="results">
+          <div className="positions-container">
+            <div className="position-card">
+              <h3>Current Position</h3>
+              <p>
+                <span>ETH Holdings:</span>
+                <span>{data.eth_at_current.toFixed(4)} ETH</span>
+              </p>
+              <p>
+                <span>USDC Holdings:</span>
+                <span>{data.usdc_at_current.toFixed(2)} USDC</span>
+              </p>
+              <p>
+                <span>Portfolio Value:</span>
+                <span>{data.v3_value_at_current.toFixed(2)} USDC</span>
+              </p>
+              <p>
+                <span>Impermanent Loss:</span>
+                <span>{data.impermanent_loss_at_current.toFixed(2)} USDC</span>
+              </p>
+            </div>
+
+            <div className="position-card">
+              <h3>At Withdrawal Price</h3>
+              <p>
+                <span>ETH:</span>
+                <span>{data.eth_at_withdraw?.toFixed(4)} ETH</span>
+              </p>
+              <p>
+                <span>USDC:</span>
+                <span>{data.usdc_at_withdraw?.toFixed(2)} USDC</span>
+              </p>
+              <p>
+                <span>Portfolio Value:</span>
+                <span>{data.withdrawn_value?.toFixed(2)} USDC</span>
+              </p>
+              <p>
+                <span>Impermanent Loss:</span>
+                <span>{data.withdrawn_il?.toFixed(2)} USDC</span>
+              </p>
+            </div>
+          </div>
+
           <div className="slider-container">
             <label>ETH-USDC Composition:</label>
             <input type="range" min="0" max="100" value={ethPercentage} disabled />
@@ -340,14 +377,20 @@ function App() {
             </span>
           </div>
 
-          <h3>Liquidity Composition</h3>
-          <canvas ref={compositionChartRef}></canvas>
+          <div className="chart-container">
+            <h3>Liquidity Composition</h3>
+            <canvas ref={compositionChartRef}></canvas>
+          </div>
 
-          <h3>Value of V3 Position vs HODL</h3>
-          <canvas ref={v3PositionChartRef}></canvas>
+          <div className="chart-container">
+            <h3>Value of V3 Position vs HODL</h3>
+            <canvas ref={v3PositionChartRef}></canvas>
+          </div>
 
-          <h3>Impermanent Loss</h3>
-          <canvas ref={impermanentLossChartRef}></canvas>
+          <div className="chart-container">
+            <h3>Impermanent Loss</h3>
+            <canvas ref={impermanentLossChartRef}></canvas>
+          </div>
         </div>
       )}
     </div>
