@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-// import Chart from 'chart.js/auto';
 import Chart from 'chart.js/auto';
 import './App.css';
 
@@ -37,7 +36,7 @@ function calculateLiquidity(P_lower, P_upper, P_entry, current_price, initial_et
   const L = initial_eth * Math.sqrt(P_entry) * Math.sqrt(P_upper) / (Math.sqrt(P_upper) - Math.sqrt(P_entry));
   const eth_holdings = P_values.map(P => L * (Math.sqrt(P_upper) - Math.sqrt(P)) / (Math.sqrt(P) * Math.sqrt(P_upper)));
   const usdc_holdings = P_values.map(P => L * (Math.sqrt(P) - Math.sqrt(P_lower)));
-  
+
   // Calculate holdings and value at withdrawal price
   const eth_at_withdraw = L * (Math.sqrt(P_upper) - Math.sqrt(P_withdraw)) / (Math.sqrt(P_withdraw) * Math.sqrt(P_upper));
   const usdc_at_withdraw = L * (Math.sqrt(P_withdraw) - Math.sqrt(P_lower));
@@ -87,6 +86,7 @@ function App() {
   const compositionChartRef = useRef(null);
   const v3PositionChartRef = useRef(null);
   const impermanentLossChartRef = useRef(null);
+  const withdrawalChartRef = useRef(null);  // Ref for the new chart
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -103,7 +103,8 @@ function App() {
 
   // Render charts when data is available
   useEffect(() => {
-    let compChart, posChart, ilChart;
+    let compChart, posChart, ilChart, withdrawChart;
+
     if (data && compositionChartRef.current) {
       const ctx = compositionChartRef.current.getContext('2d');
     
@@ -178,10 +179,12 @@ function App() {
           }
         }
       });
-    }    
+    }
+
     if (data && v3PositionChartRef.current) {
       const ctx2 = v3PositionChartRef.current.getContext('2d');
       const hodlValue = Number(initialEth) * Number(currentPrice);
+
       posChart = new Chart(ctx2, {
         type: 'line',
         data: {
@@ -235,6 +238,7 @@ function App() {
         }
       });
     }
+
     if (data && impermanentLossChartRef.current) {
       const ctx3 = impermanentLossChartRef.current.getContext('2d');
       ilChart = new Chart(ctx3, {
@@ -275,13 +279,122 @@ function App() {
         }
       });
     }
-    return () => {
-      if (compChart) compChart.destroy();
-      if (posChart) posChart.destroy();
-      if (ilChart) ilChart.destroy();
-    };
-  }, [data, currentPrice, initialEth]);
+    if (data && withdrawalChartRef.current) {
+      const ctx4 = withdrawalChartRef.current.getContext('2d');
 
+      // Calculate the tangent line
+      const calculateTangentLine = (P_values, v3_position_value, P_withdraw) => {
+        // Find the index closest to the withdrawal price
+        const withdrawIndex = P_values.reduce((prev, curr, idx) => 
+          Math.abs(curr - P_withdraw) < Math.abs(P_values[prev] - P_withdraw) ? idx : prev, 0);
+
+        // Compute derivative using central difference method
+        const h = 0.1; // Small step for numerical derivative
+        const leftIndex = Math.max(0, withdrawIndex - 1);
+        const rightIndex = Math.min(P_values.length - 1, withdrawIndex + 1);
+        
+        const derivative = (v3_position_value[rightIndex] - v3_position_value[leftIndex]) / 
+                           (P_values[rightIndex] - P_values[leftIndex]);
+
+        // Withdrawal point value
+        const withdrawalValue = v3_position_value[withdrawIndex];
+
+        // Generate tangent line points
+        const tangentLineData = P_values.map(p => ({
+          x: p,
+          y: derivative * (p - P_withdraw) + withdrawalValue
+        }));
+
+        return { tangentLineData, derivative, withdrawalValue };
+      };
+
+      // Calculate tangent line
+      const { tangentLineData, derivative, withdrawalValue } = calculateTangentLine(
+        data.P_values, 
+        data.v3_position_value, 
+        Number(P_withdraw)
+      );
+
+      const withdrawChart = new Chart(ctx4, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'V3 Position Value (Parabola)',
+              data: data.P_values.map((p, i) => ({ x: p, y: data.v3_position_value[i] })),
+              borderColor: 'blue',
+              backgroundColor: 'rgba(0, 0, 255, 0.1)',
+              fill: false,
+              tension: 0.4,
+              pointRadius: 0
+            },
+            {
+              label: 'Pool Value after withdrawal ',
+              data: tangentLineData,
+              borderColor: 'red',
+              borderDash: [5, 5], // Dashed line to distinguish
+              fill: false,
+              tension: 0,
+              pointRadius: 0
+            },
+            {
+              label: 'Withdrawal Point',
+              data: [{ x: Number(P_withdraw), y: withdrawalValue }],
+              backgroundColor: 'red',
+              pointRadius: 6,
+              type: 'scatter'
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: {
+              type: 'linear',
+              title: { display: true, text: 'ETH Price (USDC)' }
+            },
+            y: {
+              title: { display: true, text: 'Value (USDC)' }
+            }
+          },
+          plugins: {
+            tooltip: { 
+              mode: 'index', 
+              intersect: false,
+              callbacks: {
+                label: function(context) {
+                  if (context.dataset.label === 'Value after withdrawal') {
+                    return `Slope: ${derivative.toFixed(4)}`;
+                  }
+                  return context.formattedValue;
+                }
+              }
+            },
+            annotation: {
+              annotations: {
+                tangentInfo: {
+                  type: 'label',
+                  xValue: Number(P_withdraw),
+                  yValue: withdrawalValue,
+                  content: `Slope: ${derivative.toFixed(4)}`,
+                  font: {
+                    size: 12
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      return () => {
+        if (compChart) compChart.destroy();
+        if (posChart) posChart.destroy();
+        if (ilChart) ilChart.destroy();
+        if (withdrawChart) withdrawChart.destroy();
+      };
+    }
+  }, [data, currentPrice, initialEth, P_withdraw]);
   // Compute slider percentages
   const ethValueAtCurrent = data ? data.eth_at_current * currentPrice : 0;
   const totalValue = ethValueAtCurrent + (data ? data.usdc_at_current : 0);
@@ -347,7 +460,6 @@ function App() {
                 <span>{data.impermanent_loss_at_current.toFixed(2)} USDC</span>
               </p>
             </div>
-
             <div className="position-card">
               <h3>At Withdrawal Price</h3>
               <p>
@@ -385,6 +497,11 @@ function App() {
           <div className="chart-container">
             <h3>Value of V3 Position vs HODL</h3>
             <canvas ref={v3PositionChartRef}></canvas>
+          </div>
+
+          <div className="chart-container">
+            <h3>V3 Position Value at Withdrawal</h3>
+            <canvas ref={withdrawalChartRef}></canvas>
           </div>
 
           <div className="chart-container">
