@@ -48,9 +48,19 @@ function calculateLiquidity(P_lower, P_upper, P_entry, current_price, initial_et
   const usdc_at_current = L * (Math.sqrt(current_price) - Math.sqrt(P_lower));
   const v3_position_value = P_values.map((P, i) => eth_holdings[i] * P + usdc_holdings[i]);
   const value_of_assets_outside = P_values.map(P => initial_eth * P);
-  const impermanent_loss = v3_position_value.map((v3, i) => Math.abs(v3 - value_of_assets_outside[i]));
+  
+  // Calculate the pool value after withdrawal for each price point
+  const pool_value_after_withdrawal = P_values.map(P => {
+    // Calculate the tangent line value using the derivative at withdrawal price
+    const withdrawalIndex = P_values.findIndex(price => price >= P_withdraw);
+    const derivative = eth_at_withdraw; // The derivative is equal to the ETH holdings at withdrawal
+    return withdrawn_value + derivative * (P - P_withdraw);
+  });
+  
+  // Calculate impermanent loss as difference between pool value after withdrawal and v3 position value
+  const impermanent_loss = P_values.map((P, i) => pool_value_after_withdrawal[i] - v3_position_value[i]);
   const v3_value_at_current = eth_at_current * current_price + usdc_at_current;
-  const impermanent_loss_at_current = Math.abs(v3_value_at_current - (initial_eth * current_price));
+  const impermanent_loss_at_current = withdrawn_value + eth_at_withdraw * (current_price - P_withdraw) - v3_value_at_current;
 
   return {
     eth_at_current,
@@ -246,7 +256,7 @@ function App() {
         data: {
           datasets: [
             {
-              label: 'Impermanent Loss',
+              label: 'Difference (Pool Value After Withdrawal - V3 Position Value)',
               data: data.P_values.map((p, i) => ({ x: p, y: data.impermanent_loss[i] })),
               borderColor: 'red',
               fill: false,
@@ -254,7 +264,7 @@ function App() {
               pointRadius: 0
             },
             {
-              label: 'Current Impermanent Loss',
+              label: 'Current Difference',
               data: [{ x: Number(currentPrice), y: data.impermanent_loss_at_current }],
               backgroundColor: 'red',
               pointRadius: 6,
@@ -270,7 +280,7 @@ function App() {
               title: { display: true, text: 'ETH Price (USDC)' }
             },
             y: {
-              title: { display: true, text: 'Impermanent Loss (USD)' }
+              title: { display: true, text: 'Value Difference (USDC)' }
             }
           },
           plugins: {
